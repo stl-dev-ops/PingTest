@@ -1,0 +1,9 @@
+Timestamp,IP Address,Device Name,Event Type,Status,Duration (minutes),Failed Ping Count,Email Sent,Notes
+2025-10-06 15:01:00,192.168.200.102,200 Switch,MONITOR_START,ONLINE,0.00,0,False,Initial status check
+2025-10-06 15:01:00,192.168.1.8,Main Server,MONITOR_START,ONLINE,0.00,0,False,Initial status check
+2025-10-06 15:01:00,192.168.200.4,Building 121,MONITOR_START,ONLINE,0.00,0,False,Initial status check
+2025-10-06 15:01:00,192.168.200.5,Building 200,MONITOR_START,ONLINE,0.00,0,False,Initial status check
+2025-10-06 15:01:56,192.168.200.102,200 Switch,MONITOR_STOP,ONLINE,0.00,0,False,Monitoring stopped
+2025-10-06 15:01:56,192.168.1.8,Main Server,MONITOR_STOP,ONLINE,0.00,0,False,Monitoring stopped
+2025-10-06 15:01:56,192.168.200.4,Building 121,MONITOR_STOP,ONLINE,0.00,0,False,Monitoring stopped
+2025-10-06 15:01:56,192.168.200.5,Building 200,MONITOR_STOP,ONLINE,0.00,0,False,Monitoring stopped

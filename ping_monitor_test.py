@@ -1,0 +1,397 @@
+#!/usr/bin/env python3
+"""
+Test version of Network Ping Monitor
+Uses test configuration with fake IP to demonstrate email alerts
+"""
+
+import subprocess
+import time
+import csv
+import datetime
+import threading
+import os
+import sys
+import smtplib
+import traceback
+from email.message import EmailMessage
+from typing import Dict, List, Tuple
+import platform
+
+# Import test configuration instead of regular config
+try:
+    from config_test import *
+    print("📝 Using test configuration (config_test.py)")
+except ImportError:
+    print("❌ config_test.py not found, using regular config.py")
+    from config import *
+
+class PingMonitor:
+    def __init__(self, devices: Dict[str, str], ping_interval: int = 30, timeout: int = 5):
+        """
+        Initialize the ping monitor
+        
+        Args:
+            devices: Dictionary of {ip_address: description}
+            ping_interval: Seconds between ping attempts
+            timeout: Ping timeout in seconds
+        """
+        self.devices = devices
+        self.ping_interval = ping_interval
+        self.timeout = timeout
+        self.running = False
+        self.device_status = {ip: True for ip in devices.keys()}  # True = online, False = offline
+        self.last_status_change = {ip: datetime.datetime.now() for ip in devices.keys()}
+        self.failed_ping_count = {ip: 0 for ip in devices.keys()}  # Track consecutive failed pings
+        self.email_sent_for_outage = {ip: False for ip in devices.keys()}  # Track if email was sent for current outage
+        
+        # CSV file setup
+        self.csv_filename = f"ping_test_log_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        self.setup_csv_file()
+        
+        # Create logs directory if specified
+        if hasattr(globals(), 'LOG_DIRECTORY') and LOG_DIRECTORY:
+            os.makedirs(LOG_DIRECTORY, exist_ok=True)
+            self.csv_filename = os.path.join(LOG_DIRECTORY, self.csv_filename)
+        
+        # Determine ping command based on OS
+        self.is_windows = platform.system().lower() == "windows"
+    
+    def setup_csv_file(self):
+        """Create CSV file with headers"""
+        with open(self.csv_filename, 'w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow([
+                'Timestamp',
+                'IP Address', 
+                'Device Name',
+                'Event Type',
+                'Status',
+                'Duration (minutes)',
+                'Failed Ping Count',
+                'Email Sent',
+                'Notes'
+            ])
+        print(f"📄 CSV test log file created: {self.csv_filename}")
+    
+    def send_email_alert(self, ip_address: str, event_type: str, failed_count: int = 0, duration_minutes: float = 0):
+        """
+        Send email alert for device outage or recovery
+        
+        Args:
+            ip_address: IP address of the device
+            event_type: OUTAGE_ALERT or RECOVERY_ALERT
+            failed_count: Number of consecutive failed pings
+            duration_minutes: Duration of outage for recovery alerts
+        """
+        if not EMAIL_ALERTS_ENABLED:
+            return False
+            
+        try:
+            device_name = self.devices.get(ip_address, "Unknown Device")
+            timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            
+            # Create message
+            msg = EmailMessage()
+            msg['From'] = EMAIL_FROM
+            msg['To'] = ', '.join(EMAIL_TO)
+            
+            if event_type == "OUTAGE_ALERT":
+                msg['Subject'] = f"{EMAIL_SUBJECT_PREFIX} Device Outage - {device_name} ({ip_address})"
+                
+                body = f"""NETWORK DEVICE OUTAGE ALERT
+
+Device: {device_name}
+IP Address: {ip_address}
+Alert Time: {timestamp}
+Failed Ping Count: {failed_count}
+Threshold: {EMAIL_ALERT_THRESHOLD} failed pings
+
+The device has failed to respond to {failed_count} consecutive ping attempts.
+Please check the device status and network connectivity.
+
+This alert was generated automatically by the Network Ping Monitor TEST.
+"""
+            
+            elif event_type == "RECOVERY_ALERT":
+                msg['Subject'] = f"{EMAIL_SUBJECT_PREFIX} Device Recovery - {device_name} ({ip_address})"
+                
+                body = f"""NETWORK DEVICE RECOVERY ALERT
+
+Device: {device_name}
+IP Address: {ip_address}
+Recovery Time: {timestamp}
+Outage Duration: {duration_minutes:.2f} minutes
+
+The device is now responding to ping requests and appears to be back online.
+
+This recovery notification was generated automatically by the Network Ping Monitor TEST.
+"""
+            
+            msg.set_content(body)
+            
+            # Send email
+            with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+                if SMTP_USE_TLS:
+                    server.starttls()
+                server.login(EMAIL_FROM, EMAIL_PASSWORD)
+                server.send_message(msg)
+            
+            print(f"📧 TEST EMAIL sent for {device_name} ({ip_address}) - {event_type}")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Failed to send test email for {ip_address}: {e}")
+            return False
+    
+    def ping_device(self, ip_address: str) -> bool:
+        """
+        Ping a single device and return True if successful
+        Uses default system ping behavior to match 'ping <ip>' command
+        
+        Args:
+            ip_address: IP address to ping
+            
+        Returns:
+            bool: True if ping successful, False otherwise
+        """
+        try:
+            if self.is_windows:
+                # Windows ping command - use default timeout (4000ms) to match standard ping behavior
+                # -n 1 = send 1 packet, -w 4000 = wait 4000ms (4 seconds) for reply
+                command = ['ping', '-n', '1', '-w', '4000', ip_address]
+            else:
+                # Linux/Unix ping command
+                command = ['ping', '-c', '1', '-W', str(self.timeout), ip_address]
+            
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout + 2
+            )
+            
+            return result.returncode == 0
+            
+        except subprocess.TimeoutExpired:
+            return False
+        except Exception as e:
+            print(f"Error pinging {ip_address}: {e}")
+            return False
+    
+    def log_event(self, ip_address: str, event_type: str, status: str, duration_minutes: float = 0, 
+                  failed_count: int = 0, email_sent: bool = False, notes: str = ""):
+        """
+        Log an event to the CSV file
+        
+        Args:
+            ip_address: IP address of the device
+            event_type: Type of event (OUTAGE_START, OUTAGE_END, OUTAGE_ALERT, STATUS_CHECK, etc.)
+            status: Current status (ONLINE, OFFLINE)
+            duration_minutes: Duration of the event in minutes
+            failed_count: Number of consecutive failed pings
+            email_sent: Whether an email alert was sent
+            notes: Additional notes
+        """
+        timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        device_name = self.devices.get(ip_address, "Unknown")
+        
+        with open(self.csv_filename, 'a', newline='', encoding='utf-8') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow([
+                timestamp,
+                ip_address,
+                device_name,
+                event_type,
+                status,
+                f"{duration_minutes:.2f}",
+                failed_count,
+                email_sent,
+                notes
+            ])
+    
+    def check_device_status(self, ip_address: str):
+        """
+        Check a single device and handle status changes with continuous logging
+        
+        Args:
+            ip_address: IP address to check
+        """
+        current_time = datetime.datetime.now()
+        is_online = self.ping_device(ip_address)
+        previous_status = self.device_status[ip_address]
+        
+        if is_online:
+            # Device is responding
+            if not previous_status:
+                # Device came back online after being offline
+                last_change_time = self.last_status_change[ip_address]
+                duration_minutes = (current_time - last_change_time).total_seconds() / 60
+                
+                # Send recovery email if email was sent for the outage
+                email_sent = False
+                if SEND_RECOVERY_EMAILS and self.email_sent_for_outage[ip_address]:
+                    email_sent = self.send_email_alert(ip_address, "RECOVERY_ALERT", 0, duration_minutes)
+                
+                self.log_event(ip_address, "OUTAGE_END", "ONLINE", duration_minutes, 
+                             0, email_sent, f"Device recovered after {duration_minutes:.2f} minutes")
+                
+                print(f"✅ {current_time.strftime('%H:%M:%S')} - {ip_address} ({self.devices[ip_address]}) is back ONLINE after {duration_minutes:.2f} minutes")
+                
+                # Reset counters
+                self.email_sent_for_outage[ip_address] = False
+            
+            # Reset failed ping counter
+            self.failed_ping_count[ip_address] = 0
+            self.device_status[ip_address] = True
+            
+            # Update last change time only if status actually changed
+            if not previous_status:
+                self.last_status_change[ip_address] = current_time
+        
+        else:
+            # Device is not responding
+            self.failed_ping_count[ip_address] += 1
+            failed_count = self.failed_ping_count[ip_address]
+            
+            if previous_status:
+                # Device just went offline - log the initial failure
+                self.log_event(ip_address, "OUTAGE_START", "OFFLINE", 0, failed_count, False, 
+                             "Device became unreachable")
+                print(f"❌ {current_time.strftime('%H:%M:%S')} - {ip_address} ({self.devices[ip_address]}) went OFFLINE (ping #{failed_count})")
+                self.device_status[ip_address] = False
+                self.last_status_change[ip_address] = current_time
+            
+            else:
+                # Device still offline - log every failed ping
+                self.log_event(ip_address, "PING_FAILED", "OFFLINE", 0, failed_count, False, 
+                             f"Consecutive failed ping #{failed_count}")
+                print(f"❌ {current_time.strftime('%H:%M:%S')} - {ip_address} ({self.devices[ip_address]}) ping failed #{failed_count}")
+            
+            # Send email alert if threshold reached and not already sent
+            if failed_count == EMAIL_ALERT_THRESHOLD and not self.email_sent_for_outage[ip_address]:
+                email_sent = self.send_email_alert(ip_address, "OUTAGE_ALERT", failed_count)
+                if email_sent:
+                    self.email_sent_for_outage[ip_address] = True
+                
+                self.log_event(ip_address, "OUTAGE_ALERT", "OFFLINE", 0, failed_count, email_sent, 
+                             f"Email alert sent after {failed_count} failed pings")
+                print(f"📧 {current_time.strftime('%H:%M:%S')} - TEST EMAIL ALERT sent for {self.devices[ip_address]} after {failed_count} failed pings")
+    
+    def monitor_all_devices(self):
+        """Monitor all devices in a single cycle"""
+        threads = []
+        
+        for ip_address in self.devices.keys():
+            thread = threading.Thread(target=self.check_device_status, args=(ip_address,))
+            threads.append(thread)
+            thread.start()
+        
+        # Wait for all threads to complete
+        for thread in threads:
+            thread.join()
+    
+    def start_monitoring(self):
+        """Start the continuous monitoring loop"""
+        self.running = True
+        print(f"🧪 Starting TEST ping monitor for {len(self.devices)} devices...")
+        print(f"⏱️  Ping interval: {self.ping_interval} second(s)")
+        print(f"⏰ Timeout: {self.timeout} seconds")
+        print(f"📧 Email alerts: {'Enabled' if EMAIL_ALERTS_ENABLED else 'Disabled'}")
+        if EMAIL_ALERTS_ENABLED:
+            print(f"🚨 Alert threshold: {EMAIL_ALERT_THRESHOLD} consecutive failed pings")
+            print(f"📬 Recipients: {', '.join(EMAIL_TO)}")
+        print(f"📄 Log file: {self.csv_filename}")
+        print("📝 Testing: Fake IP will trigger email alert after 3 failures")
+        print("Press Ctrl+C to stop testing\n")
+        
+        # Log initial status
+        for ip_address in self.devices.keys():
+            is_online = self.ping_device(ip_address)
+            status = "ONLINE" if is_online else "OFFLINE"
+            self.device_status[ip_address] = is_online
+            self.failed_ping_count[ip_address] = 0 if is_online else 1
+            
+            self.log_event(ip_address, "MONITOR_START", status, 0, 
+                         self.failed_ping_count[ip_address], False, "Initial status check")
+            
+            status_symbol = "✅" if is_online else "❌"
+            print(f"{status_symbol} {ip_address} ({self.devices[ip_address]}) - {status}")
+        
+        print(f"\n🚀 TEST monitoring started at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print("💡 Watch for email alert when fake IP fails 3 times!")
+        print("=" * 80)
+        
+        try:
+            cycle_count = 0
+            
+            while self.running and cycle_count < 20:  # Limit test to 20 cycles
+                cycle_count += 1
+                cycle_start = datetime.datetime.now()
+                
+                print(f"\n📊 Test cycle #{cycle_count} - {cycle_start.strftime('%H:%M:%S')}")
+                self.monitor_all_devices()
+                
+                cycle_duration = (datetime.datetime.now() - cycle_start).total_seconds()
+                sleep_time = max(0, self.ping_interval - cycle_duration)
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+                
+            if cycle_count >= 20:
+                print("\n⏰ Test completed (20 cycles)")
+                self.stop_monitoring()
+                
+        except KeyboardInterrupt:
+            print("\n\n🛑 Stopping test...")
+            self.stop_monitoring()
+    
+    def stop_monitoring(self):
+        """Stop the monitoring"""
+        self.running = False
+        
+        print("📊 Final test status check...")
+        # Log final status
+        for ip_address in self.devices.keys():
+            is_online = self.ping_device(ip_address)
+            status = "ONLINE" if is_online else "OFFLINE"
+            failed_count = self.failed_ping_count[ip_address]
+            
+            self.log_event(ip_address, "MONITOR_STOP", status, 0, failed_count, False, "Test monitoring stopped")
+            
+            status_symbol = "✅" if is_online else "❌"
+            print(f"{status_symbol} {ip_address} ({self.devices[ip_address]}) - {status}")
+        
+        print(f"\n✅ Test completed at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"📄 Test log saved to: {self.csv_filename}")
+        print("📧 Check your email for test alerts!")
+
+def main():
+    print("🧪 Network Ping Monitor - EMAIL TEST MODE")
+    print("=" * 60)
+    print("This test includes a fake IP that will fail and trigger email alerts")
+    print()
+    
+    # Use configuration from config_test.py
+    devices = DEVICES
+    ping_interval = PING_INTERVAL
+    timeout = PING_TIMEOUT
+    
+    # Validate email configuration
+    if EMAIL_ALERTS_ENABLED:
+        if not EMAIL_FROM or not EMAIL_PASSWORD or not EMAIL_TO:
+            print("⚠️  WARNING: Email alerts are enabled but email configuration is incomplete!")
+            print("Please update the email settings in config_test.py")
+            return
+        else:
+            print(f"📧 Email alerts configured for {len(EMAIL_TO)} recipients")
+    else:
+        print("❌ Email alerts are disabled - enable in config_test.py for testing")
+        return
+    
+    print()
+    
+    # Create and start monitor
+    monitor = PingMonitor(devices, ping_interval, timeout)
+    monitor.start_monitoring()
+
+if __name__ == "__main__":
+    main()

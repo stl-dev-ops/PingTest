@@ -1,0 +1,28 @@
+Timestamp,IP Address,Device Name,Event Type,Status,Duration (minutes),Failed Ping Count,Email Sent,Notes
+2025-10-06 15:05:51,192.168.1.8,Main Server,MONITOR_START,ONLINE,0.00,0,False,Initial status check
+2025-10-06 15:05:51,192.168.200.102,200 Switch,MONITOR_START,ONLINE,0.00,0,False,Initial status check
+2025-10-06 15:05:51,192.168.999.999,Test Fake Device,MONITOR_START,OFFLINE,0.00,1,False,Initial status check
+2025-10-06 15:05:51,192.168.999.999,Test Fake Device,PING_FAILED,OFFLINE,0.00,2,False,Consecutive failed ping #2
+2025-10-06 15:05:53,192.168.999.999,Test Fake Device,PING_FAILED,OFFLINE,0.00,3,False,Consecutive failed ping #3
+2025-10-06 15:05:55,192.168.999.999,Test Fake Device,OUTAGE_ALERT,OFFLINE,0.00,3,True,Email alert sent after 3 failed pings
+2025-10-06 15:05:55,192.168.999.999,Test Fake Device,PING_FAILED,OFFLINE,0.00,4,False,Consecutive failed ping #4
+2025-10-06 15:05:59,192.168.999.999,Test Fake Device,PING_FAILED,OFFLINE,0.00,5,False,Consecutive failed ping #5
+2025-10-06 15:06:02,192.168.999.999,Test Fake Device,PING_FAILED,OFFLINE,0.00,6,False,Consecutive failed ping #6
+2025-10-06 15:06:04,192.168.999.999,Test Fake Device,PING_FAILED,OFFLINE,0.00,7,False,Consecutive failed ping #7
+2025-10-06 15:06:05,192.168.999.999,Test Fake Device,PING_FAILED,OFFLINE,0.00,8,False,Consecutive failed ping #8
+2025-10-06 15:06:07,192.168.999.999,Test Fake Device,PING_FAILED,OFFLINE,0.00,9,False,Consecutive failed ping #9
+2025-10-06 15:06:09,192.168.999.999,Test Fake Device,PING_FAILED,OFFLINE,0.00,10,False,Consecutive failed ping #10
+2025-10-06 15:06:11,192.168.999.999,Test Fake Device,PING_FAILED,OFFLINE,0.00,11,False,Consecutive failed ping #11
+2025-10-06 15:06:13,192.168.999.999,Test Fake Device,PING_FAILED,OFFLINE,0.00,12,False,Consecutive failed ping #12
+2025-10-06 15:06:15,192.168.999.999,Test Fake Device,PING_FAILED,OFFLINE,0.00,13,False,Consecutive failed ping #13
+2025-10-06 15:06:17,192.168.999.999,Test Fake Device,PING_FAILED,OFFLINE,0.00,14,False,Consecutive failed ping #14
+2025-10-06 15:06:19,192.168.999.999,Test Fake Device,PING_FAILED,OFFLINE,0.00,15,False,Consecutive failed ping #15
+2025-10-06 15:06:21,192.168.999.999,Test Fake Device,PING_FAILED,OFFLINE,0.00,16,False,Consecutive failed ping #16
+2025-10-06 15:06:23,192.168.999.999,Test Fake Device,PING_FAILED,OFFLINE,0.00,17,False,Consecutive failed ping #17
+2025-10-06 15:06:25,192.168.999.999,Test Fake Device,PING_FAILED,OFFLINE,0.00,18,False,Consecutive failed ping #18
+2025-10-06 15:06:27,192.168.999.999,Test Fake Device,PING_FAILED,OFFLINE,0.00,19,False,Consecutive failed ping #19
+2025-10-06 15:06:29,192.168.999.999,Test Fake Device,PING_FAILED,OFFLINE,0.00,20,False,Consecutive failed ping #20
+2025-10-06 15:06:31,192.168.999.999,Test Fake Device,PING_FAILED,OFFLINE,0.00,21,False,Consecutive failed ping #21
+2025-10-06 15:06:33,192.168.1.8,Main Server,MONITOR_STOP,ONLINE,0.00,0,False,Test monitoring stopped
+2025-10-06 15:06:33,192.168.200.102,200 Switch,MONITOR_STOP,ONLINE,0.00,0,False,Test monitoring stopped
+2025-10-06 15:06:33,192.168.999.999,Test Fake Device,MONITOR_STOP,OFFLINE,0.00,21,False,Test monitoring stopped

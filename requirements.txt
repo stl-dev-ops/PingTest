@@ -1,0 +1,20 @@
+# Network Ping Monitor Requirements
+# This project uses only Python standard library modules
+# No external dependencies required
+
+# Standard library modules used:
+# - subprocess (ping execution)
+# - time (delays and timing)
+# - csv (logging)
+# - datetime (timestamps)
+# - threading (concurrent pings)
+# - os (file operations)
+# - sys (system operations)
+# - smtplib (email sending)
+# - email.message (email formatting)
+# - platform (OS detection)
+
+# If you need additional features in the future, uncomment these:
+# requests>=2.31.0  # For HTTP-based monitoring
+# psutil>=5.9.0     # For system monitoring
+# schedule>=1.2.0   # For advanced scheduling
