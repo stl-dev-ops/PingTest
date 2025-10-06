@@ -38,34 +38,48 @@ class PingMonitor:
         self.failed_ping_count = {ip: 0 for ip in devices.keys()}  # Track consecutive failed pings
         self.email_sent_for_outage = {ip: False for ip in devices.keys()}  # Track if email was sent for current outage
         
-        # CSV file setup
-        self.csv_filename = f"ping_log_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-        self.setup_csv_file()
-        
-        # Create logs directory if specified
+        # CSV file setup - compute filename and ensure log directory exists before creating file
+        timestamp_suffix = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"ping_log_{timestamp_suffix}.csv"
+
+        # Create logs directory if specified and adjust filename
         if hasattr(globals(), 'LOG_DIRECTORY') and LOG_DIRECTORY:
             os.makedirs(LOG_DIRECTORY, exist_ok=True)
-            self.csv_filename = os.path.join(LOG_DIRECTORY, self.csv_filename)
+            self.csv_filename = os.path.join(LOG_DIRECTORY, filename)
+        else:
+            self.csv_filename = filename
+
+        # Create CSV file with headers if needed
+        self.setup_csv_file()
         
         # Determine ping command based on OS
         self.is_windows = platform.system().lower() == "windows"
     
     def setup_csv_file(self):
         """Create CSV file with headers"""
-        with open(self.csv_filename, 'w', newline='', encoding='utf-8') as csvfile:
-            writer = csv.writer(csvfile)
-            writer.writerow([
-                'Timestamp',
-                'IP Address', 
-                'Device Name',
-                'Event Type',
-                'Status',
-                'Duration (minutes)',
-                'Failed Ping Count',
-                'Email Sent',
-                'Notes'
-            ])
-        print(f"CSV log file created: {self.csv_filename}")
+        # Only create the file and write headers if it does not already exist or is empty
+        try:
+            need_header = True
+            if os.path.exists(self.csv_filename) and os.path.getsize(self.csv_filename) > 0:
+                need_header = False
+
+            with open(self.csv_filename, 'a', newline='', encoding='utf-8') as csvfile:
+                writer = csv.writer(csvfile)
+                if need_header:
+                    writer.writerow([
+                        'Timestamp',
+                        'IP Address', 
+                        'Device Name',
+                        'Event Type',
+                        'Status',
+                        'Duration (minutes)',
+                        'Failed Ping Count',
+                        'Email Sent',
+                        'Notes'
+                    ])
+                    print(f"CSV log file created with header: {self.csv_filename}")
+        except Exception as e:
+            print(f"❌ Failed to create CSV log file {self.csv_filename}: {e}")
     
     def send_email_alert(self, ip_address: str, event_type: str, failed_count: int = 0, duration_minutes: float = 0):
         """
@@ -189,19 +203,39 @@ This recovery notification was generated automatically by the Network Ping Monit
         timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         device_name = self.devices.get(ip_address, "Unknown")
         
-        with open(self.csv_filename, 'a', newline='', encoding='utf-8') as csvfile:
-            writer = csv.writer(csvfile)
-            writer.writerow([
-                timestamp,
-                ip_address,
-                device_name,
-                event_type,
-                status,
-                f"{duration_minutes:.2f}",
-                failed_count,
-                email_sent,
-                notes
-            ])
+        # Open file for append; if file is empty write header first (defensive)
+        try:
+            need_header = True
+            if os.path.exists(self.csv_filename) and os.path.getsize(self.csv_filename) > 0:
+                need_header = False
+
+            with open(self.csv_filename, 'a', newline='', encoding='utf-8') as csvfile:
+                writer = csv.writer(csvfile)
+                if need_header:
+                    writer.writerow([
+                        'Timestamp',
+                        'IP Address', 
+                        'Device Name',
+                        'Event Type',
+                        'Status',
+                        'Duration (minutes)',
+                        'Failed Ping Count',
+                        'Email Sent',
+                        'Notes'
+                    ])
+                writer.writerow([
+                    timestamp,
+                    ip_address,
+                    device_name,
+                    event_type,
+                    status,
+                    f"{duration_minutes:.2f}",
+                    failed_count,
+                    email_sent,
+                    notes
+                ])
+        except Exception as e:
+            print(f"❌ Failed to write log event to {self.csv_filename}: {e}")
     
     def check_device_status(self, ip_address: str):
         """
