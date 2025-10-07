@@ -1,0 +1,2 @@
+Timestamp,IP Address,Device Name,Event Type,Status,Duration (minutes),Failed Ping Count,Email Sent,Notes
+2025-10-07 07:19:21,127.0.0.1,Localhost,SMOKE_TEST,ONLINE,0.00,0,False,Smoke test event

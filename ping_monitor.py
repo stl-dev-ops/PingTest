@@ -19,6 +19,74 @@ from typing import Dict, List, Tuple
 import platform
 from config import *
 
+# Single-instance guard (cross-platform)
+import tempfile
+
+class SingleInstance:
+    """Prevent multiple instances. On Windows uses a named mutex. On Unix uses an fcntl lockfile."""
+    def __init__(self, name: str = "NetworkPingMonitor"):
+        self.name = name
+        self.is_windows = platform.system().lower() == 'windows'
+        self.handle = None
+        self.fp = None
+        if self.is_windows:
+            try:
+                import ctypes
+                from ctypes import wintypes
+                # Create or open a named mutex
+                CreateMutex = ctypes.windll.kernel32.CreateMutexW
+                CreateMutex.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
+                CreateMutex.restype = wintypes.HANDLE
+                self.handle = CreateMutex(None, False, f"Global\\{self.name}")
+                # If mutex already existed, GetLastError will be ERROR_ALREADY_EXISTS (183)
+                last = ctypes.windll.kernel32.GetLastError()
+                ERROR_ALREADY_EXISTS = 183
+                if last == ERROR_ALREADY_EXISTS:
+                    raise RuntimeError("Another instance is already running")
+            except Exception:
+                # If anything goes wrong assume another instance or inability to create mutex
+                raise
+        else:
+            # Unix-like: use flock on a tempfile
+            import fcntl
+            lockfile = os.path.join(tempfile.gettempdir(), f"{self.name}.lock")
+            self.fp = open(lockfile, 'w')
+            try:
+                fcntl.flock(self.fp.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise RuntimeError("Another instance is already running")
+
+    def release(self):
+        if self.is_windows:
+            try:
+                import ctypes
+                if self.handle:
+                    ctypes.windll.kernel32.ReleaseMutex(self.handle)
+                    ctypes.windll.kernel32.CloseHandle(self.handle)
+                    self.handle = None
+            except Exception:
+                pass
+        else:
+            try:
+                import fcntl
+                if self.fp:
+                    fcntl.flock(self.fp.fileno(), fcntl.LOCK_UN)
+                    self.fp.close()
+                    self.fp = None
+            except Exception:
+                pass
+
+    def __del__(self):
+        self.release()
+
+
+# Create the singleton guard early so duplicates exit immediately
+try:
+    _single_instance = SingleInstance('NetworkPingMonitor')
+except RuntimeError:
+    print('Another instance of NetworkPingMonitor is already running; exiting.')
+    sys.exit(0)
+
 class PingMonitor:
     def __init__(self, devices: Dict[str, str], ping_interval: int = 30, timeout: int = 5):
         """
@@ -42,12 +110,16 @@ class PingMonitor:
         timestamp_suffix = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = f"ping_log_{timestamp_suffix}.csv"
 
-        # Create logs directory if specified and adjust filename
+        # Determine a stable base directory for logs: directory of this script file
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+
+        # Create logs directory if specified and adjust filename (use base_dir to avoid running in System32)
         if hasattr(globals(), 'LOG_DIRECTORY') and LOG_DIRECTORY:
-            os.makedirs(LOG_DIRECTORY, exist_ok=True)
-            self.csv_filename = os.path.join(LOG_DIRECTORY, filename)
+            log_dir = os.path.join(base_dir, LOG_DIRECTORY)
+            os.makedirs(log_dir, exist_ok=True)
+            self.csv_filename = os.path.join(log_dir, filename)
         else:
-            self.csv_filename = filename
+            self.csv_filename = os.path.join(base_dir, filename)
 
         # Create CSV file with headers if needed
         self.setup_csv_file()
@@ -204,25 +276,12 @@ This recovery notification was generated automatically by the Network Ping Monit
         device_name = self.devices.get(ip_address, "Unknown")
         
         # Open file for append; if file is empty write header first (defensive)
+        # Ensure header is present (defensive check) before appending
         try:
-            need_header = True
-            if os.path.exists(self.csv_filename) and os.path.getsize(self.csv_filename) > 0:
-                need_header = False
+            self.ensure_csv_header()
 
             with open(self.csv_filename, 'a', newline='', encoding='utf-8') as csvfile:
                 writer = csv.writer(csvfile)
-                if need_header:
-                    writer.writerow([
-                        'Timestamp',
-                        'IP Address', 
-                        'Device Name',
-                        'Event Type',
-                        'Status',
-                        'Duration (minutes)',
-                        'Failed Ping Count',
-                        'Email Sent',
-                        'Notes'
-                    ])
                 writer.writerow([
                     timestamp,
                     ip_address,
@@ -236,6 +295,38 @@ This recovery notification was generated automatically by the Network Ping Monit
                 ])
         except Exception as e:
             print(f"❌ Failed to write log event to {self.csv_filename}: {e}")
+
+    def ensure_csv_header(self):
+        """Check the CSV's first line and prepend header if missing."""
+        header = 'Timestamp'
+        try:
+            if not os.path.exists(self.csv_filename) or os.path.getsize(self.csv_filename) == 0:
+                # file missing or empty: setup_csv_file will create header
+                self.setup_csv_file()
+                return
+
+            # Read first line to confirm header
+            with open(self.csv_filename, 'r', encoding='utf-8') as f:
+                first = f.readline()
+                if 'Timestamp' in first and 'IP Address' in first:
+                    return  # header present
+
+            # Header missing: prepend header safely
+            tmp = self.csv_filename + '.tmp'
+            with open(self.csv_filename, 'r', encoding='utf-8') as orig, open(tmp, 'w', encoding='utf-8', newline='') as newf:
+                writer = csv.writer(newf)
+                writer.writerow([
+                    'Timestamp', 'IP Address', 'Device Name', 'Event Type', 'Status',
+                    'Duration (minutes)', 'Failed Ping Count', 'Email Sent', 'Notes'
+                ])
+                # copy rest
+                for line in orig:
+                    newf.write(line)
+
+            os.replace(tmp, self.csv_filename)
+            print(f"Fixed missing header in: {self.csv_filename}")
+        except Exception as e:
+            print(f"❌ Failed to ensure CSV header for {self.csv_filename}: {e}")
     
     def check_device_status(self, ip_address: str):
         """

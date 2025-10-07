@@ -3,10 +3,10 @@
 # Device Configuration
 # Format: IP_ADDRESS = "Description"
 DEVICES = {
-    "192.168.200.102": "200 Switch",
-    "192.168.1.8": "Main Server",
-    "192.168.200.4": "Building 121", 
-    "192.168.200.5": "Building 200"
+    "192.168.200.102": "Bulding 200 Switch",
+    "192.168.1.8": "Building 121 Main Server",
+    "192.168.200.4": "Building 121 P2P", 
+    "192.168.200.5": "Building 200 P2P"
 }
 
 # Monitoring Settings
